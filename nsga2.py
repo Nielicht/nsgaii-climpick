@@ -16,6 +16,12 @@ class Nsga2:
         self.max_flips = max_flips
         self.mutation_prob = mutation_prob
         self.max_active_vars = max_active_vars
+        self.pareto_history = []
+
+        if population is None:
+            self.generation_count = -1
+        else:
+            self.generation_count = 0
 
         predictoras_tmp = xr.open_dataset('data/preprocessed/predictoras.nc')
         z500 = predictoras_tmp['z500'].values
@@ -173,6 +179,15 @@ class Nsga2:
 
         self.population = final_population
 
+        rank0 = solutions_by_rank_list[0]
+        positions_fitness_list = []
+        for solution in rank0:
+            positions = np.where(solution.gnome == 1)[0]
+            positions_fitness_list.append( (positions, solution.fitness) )
+
+        self.pareto_history.append(positions_fitness_list)
+        self.generation_count += 1
+
     def combinePopulation(self) -> list[Solution]:
         number_of_crossings = len(self.population) // 2
         random_gen = np.random.default_rng()
@@ -221,15 +236,16 @@ class Nsga2:
         return solution
 
     def crossover(self, parent1: Solution, parent2: Solution) -> tuple[Solution, Solution]:
-        midpoint = parent1.gnome.shape[0] // 2
+        rng = np.random.default_rng()
+        punto_corte = rng.integers(1, parent1.gnome.shape[0])
 
         child_gnome_1 = np.concatenate([
-            parent1.gnome[:midpoint],
-            parent2.gnome[midpoint:]
+            parent1.gnome[:punto_corte],
+            parent2.gnome[punto_corte:]
         ])
         child_gnome_2 = np.concatenate([
-            parent2.gnome[:midpoint],
-            parent1.gnome[midpoint:]
+            parent2.gnome[:punto_corte],
+            parent1.gnome[punto_corte:]
         ])
 
         child_gnome_1 = self.limit_vars(child_gnome_1)

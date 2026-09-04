@@ -117,7 +117,6 @@ class Nsga2:
         f1_dr = f1_score(y_dr_val, y_dr_pred)
 
         return (f1_dr, f1_hw, X_train.shape[1])
-        
 
     def pareto(self, population: list[Solution], trim_count: int = None):
         if trim_count is None:

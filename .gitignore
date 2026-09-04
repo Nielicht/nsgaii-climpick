@@ -3,5 +3,6 @@ tfg_env
 old_files
 __pycache__
 *.pyc
+testing.ipynb
 .ipynb_checkpoints
 .directory

@@ -1,7 +1,6 @@
 import numpy as np
 import xarray as xr
 import pandas as pd 
-from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import f1_score
 from sklearn.preprocessing import StandardScaler
@@ -9,13 +8,14 @@ from solution import Solution
 
 class Nsga2:
 
-    def __init__(self, population: list[Solution] = None, generator_population_size: int = 100, generations: int = 100, max_flips: int = 10, mutation_prob: float = 0.5, max_active_vars: int = 50):
+    def __init__(self, population: list[Solution] = None, generator_population_size: int = 100, generations: int = 100, max_flips: int = 10, mutation_prob: float = 0.5, max_active_vars: int = 50, cross_type: int = 1):
         self.population = population
         self.generator_population_size = generator_population_size
         self.generations = generations
         self.max_flips = max_flips
         self.mutation_prob = mutation_prob
         self.max_active_vars = max_active_vars
+        self.cross_type = cross_type
         self.pareto_history = []
 
         if population is None:
@@ -26,8 +26,20 @@ class Nsga2:
         predictoras_tmp = xr.open_dataset('data/preprocessed/predictoras.nc')
         z500 = predictoras_tmp['z500'].values
         rh = predictoras_tmp['rh'].values
-        self.predictoras  = np.stack([z500, rh], axis=-1).reshape(z500.shape[0], -1)
-        self.etiquetas =  pd.read_parquet('data/preprocessed/etiquetas.parquet')
+        predictoras = np.stack([z500, rh], axis=-1).reshape(z500.shape[0], -1)
+        del predictoras_tmp, z500, rh
+        etiquetas = pd.read_parquet('data/preprocessed/etiquetas.parquet')
+
+        no_test_mask = etiquetas['time'].dt.year <= 2011
+        predictoras = predictoras[no_test_mask.values]
+        etiquetas = etiquetas[no_test_mask]
+        
+        train_mask = etiquetas['time'].dt.year <= 2009
+        val_mask = etiquetas['time'].dt.year > 2009
+        self.X_train = predictoras[train_mask.values]
+        self.X_val = predictoras[val_mask.values]
+        self.y_train = etiquetas[train_mask].reset_index(drop=True)
+        self.y_val = etiquetas[val_mask].reset_index(drop=True)
 
     def run(self):
         if self.population is None:
@@ -49,8 +61,8 @@ class Nsga2:
 
         for i in range(population_size):
             num_vars = rng.integers(1, self.max_active_vars + 1)
-            gnome = np.zeros(self.predictoras.shape[1], dtype=int)
-            vars_seleccionadas = rng.choice(self.predictoras.shape[1], size=num_vars, replace=False)
+            gnome = np.zeros(self.X_train.shape[1], dtype=int)
+            vars_seleccionadas = rng.choice(self.X_train.shape[1], size=num_vars, replace=False)
             gnome[vars_seleccionadas] = 1
             population.append(Solution(gnome))
 
@@ -67,7 +79,7 @@ class Nsga2:
             vars_to_remove = rng.choice(possible_vars, size=diff, replace=False)
             final_gnome[vars_to_remove] = 0
         elif num_vars < 1:
-            var_to_add = rng.choice(self.predictoras.shape[1], size=1, replace=False)
+            var_to_add = rng.choice(self.X_train.shape[1], size=1, replace=False)
             final_gnome[var_to_add] = 1
 
         return final_gnome
@@ -82,31 +94,30 @@ class Nsga2:
     def get_fitness(self, solution: Solution):
         random_state=96
         
-        X = self.predictoras[:, solution.gnome == 1]
-        y_hw = self.etiquetas['hw']
-        y_dr = self.etiquetas['dr']
-
-        X_train, X_test, y_hw_train, y_hw_test, y_dr_train, y_dr_test = train_test_split(X, y_hw, y_dr, shuffle=False)
-        # Nota: puesto que shuffle = false, actualmente el split toma el tramo 1993 - 2010 (ambos años completos inclusive) 
-        # para entrenamiento, y el tramo 2011 - 2016 como test.
+        X_train = self.X_train[:, solution.gnome == 1]
+        X_val = self.X_val[:, solution.gnome == 1]
+        y_hw_train = self.y_train['hw']
+        y_hw_val = self.y_val['hw']
+        y_dr_train = self.y_train['dr']
+        y_dr_val = self.y_val['dr']
 
         scaler = StandardScaler()
         X_train = scaler.fit_transform(X_train)
-        X_test = scaler.transform(X_test)    
+        X_val = scaler.transform(X_val)    
 
-        modelo_hw = LogisticRegression(max_iter=300, random_state=random_state)
+        modelo_hw = LogisticRegression(max_iter=5000, random_state=random_state)
         modelo_hw.fit(X_train, y_hw_train)
         
-        modelo_dr = LogisticRegression(max_iter=300, random_state=random_state)
+        modelo_dr = LogisticRegression(max_iter=5000, random_state=random_state)
         modelo_dr.fit(X_train, y_dr_train)
 
-        y_hw_pred = modelo_hw.predict(X_test)
-        y_dr_pred = modelo_dr.predict(X_test)
+        y_hw_pred = modelo_hw.predict(X_val)
+        y_dr_pred = modelo_dr.predict(X_val)
 
-        f1_hw = f1_score(y_hw_test, y_hw_pred)
-        f1_dr = f1_score(y_dr_test, y_dr_pred)
+        f1_hw = f1_score(y_hw_val, y_hw_pred)
+        f1_dr = f1_score(y_dr_val, y_dr_pred)
 
-        return (f1_dr, f1_hw, X.shape[1])
+        return (f1_dr, f1_hw, X_train.shape[1])
         
 
     def pareto(self, population: list[Solution], trim_count: int = None):
@@ -234,8 +245,31 @@ class Nsga2:
 
         solution.gnome = self.limit_vars(solution.gnome ^ mask)
         return solution
-
+    
     def crossover(self, parent1: Solution, parent2: Solution) -> tuple[Solution, Solution]:
+        solution = None
+        
+        if self.cross_type == 1:
+            solution = self.crossover_multipoint(parent1, parent2)
+        else:
+            solution = self.crossover_xor(parent1, parent2)
+        
+        return solution
+    
+    def crossover_xor(self, parent1: Solution, parent2: Solution) -> tuple[Solution, Solution]:
+        rng = np.random.default_rng()
+        xor_mask = parent1.gnome ^ parent2.gnome
+        positions = rng.integers(0, 2, size=xor_mask.shape)
+        final_list = (xor_mask * positions) == 1
+        child_gnome_1 = np.where(final_list, parent2.gnome, parent1.gnome)
+        child_gnome_2 = np.where(final_list, parent1.gnome, parent2.gnome)
+
+        child_gnome_1 = self.limit_vars(child_gnome_1)
+        child_gnome_2 = self.limit_vars(child_gnome_2)
+
+        return Solution(child_gnome_1), Solution(child_gnome_2)
+    
+    def crossover_multipoint(self, parent1: Solution, parent2: Solution) -> tuple[Solution, Solution]:
         rng = np.random.default_rng()
         punto_corte = rng.integers(1, parent1.gnome.shape[0])
 

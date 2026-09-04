@@ -8,7 +8,7 @@ from solution import Solution
 
 class Nsga2:
 
-    def __init__(self, population: list[Solution] = None, generator_population_size: int = 100, generations: int = 100, max_flips: int = 10, mutation_prob: float = 0.5, max_active_vars: int = 50, cross_type: int = 1):
+    def __init__(self, population: list[Solution] = None, generator_population_size: int = 100, generations: int = 100, seed: int = None, max_flips: int = 10, mutation_prob: float = 0.5, max_active_vars: int = 50, cross_type: int = 1):
         self.population = population
         self.generator_population_size = generator_population_size
         self.generations = generations
@@ -16,6 +16,7 @@ class Nsga2:
         self.mutation_prob = mutation_prob
         self.max_active_vars = max_active_vars
         self.cross_type = cross_type
+        self.rng = np.random.default_rng(seed)
         self.pareto_history = []
 
         if population is None:
@@ -56,30 +57,28 @@ class Nsga2:
         if population_size is None:
             population_size = self.generator_population_size
         
-        rng = np.random.default_rng()
         population = []
 
         for i in range(population_size):
-            num_vars = rng.integers(1, self.max_active_vars + 1)
+            num_vars = self.rng.integers(1, self.max_active_vars + 1)
             gnome = np.zeros(self.X_train.shape[1], dtype=int)
-            vars_seleccionadas = rng.choice(self.X_train.shape[1], size=num_vars, replace=False)
+            vars_seleccionadas = self.rng.choice(self.X_train.shape[1], size=num_vars, replace=False)
             gnome[vars_seleccionadas] = 1
             population.append(Solution(gnome))
 
         return population
 
     def limit_vars(self, gnome: np.ndarray):
-        rng = np.random.default_rng()
         final_gnome = gnome.copy()
         num_vars = gnome.sum()
         
         if num_vars > self.max_active_vars:
             diff = gnome.sum() - self.max_active_vars
             possible_vars = np.where(gnome == 1)[0]
-            vars_to_remove = rng.choice(possible_vars, size=diff, replace=False)
+            vars_to_remove = self.rng.choice(possible_vars, size=diff, replace=False)
             final_gnome[vars_to_remove] = 0
         elif num_vars < 1:
-            var_to_add = rng.choice(self.X_train.shape[1], size=1, replace=False)
+            var_to_add = self.rng.choice(self.X_train.shape[1], size=1, replace=False)
             final_gnome[var_to_add] = 1
 
         return final_gnome
@@ -201,14 +200,13 @@ class Nsga2:
 
     def combinePopulation(self) -> list[Solution]:
         number_of_crossings = len(self.population) // 2
-        random_gen = np.random.default_rng()
         population_R = self.population.copy()
 
         for i in range(number_of_crossings):
-            gnome1 = random_gen.choice(self.population)
-            gnome2 = random_gen.choice(self.population)
-            gnome3 = random_gen.choice(self.population)
-            gnome4 = random_gen.choice(self.population)
+            gnome1 = self.rng.choice(self.population)
+            gnome2 = self.rng.choice(self.population)
+            gnome3 = self.rng.choice(self.population)
+            gnome4 = self.rng.choice(self.population)
 
             if gnome1.better_than(gnome2):
                 cross_sol_1 = gnome1
@@ -229,14 +227,13 @@ class Nsga2:
 
     def mutate(self, solution: Solution) -> Solution:
         total_elements = solution.gnome.size
-        random_gen = np.random.default_rng()
 
-        positions_to_flip = random_gen.choice(
+        positions_to_flip = self.rng.choice(
             total_elements,
             size=self.max_flips,
             replace=False
         )
-        should_flip = random_gen.random(self.max_flips) < self.mutation_prob
+        should_flip = self.rng.random(self.max_flips) < self.mutation_prob
         positions_to_flip = positions_to_flip[should_flip]
 
         mask = np.zeros(total_elements, dtype=int)
@@ -257,9 +254,8 @@ class Nsga2:
         return solution
     
     def crossover_xor(self, parent1: Solution, parent2: Solution) -> tuple[Solution, Solution]:
-        rng = np.random.default_rng()
         xor_mask = parent1.gnome ^ parent2.gnome
-        positions = rng.integers(0, 2, size=xor_mask.shape)
+        positions = self.rng.integers(0, 2, size=xor_mask.shape)
         final_list = (xor_mask * positions) == 1
         child_gnome_1 = np.where(final_list, parent2.gnome, parent1.gnome)
         child_gnome_2 = np.where(final_list, parent1.gnome, parent2.gnome)
@@ -270,8 +266,7 @@ class Nsga2:
         return Solution(child_gnome_1), Solution(child_gnome_2)
     
     def crossover_multipoint(self, parent1: Solution, parent2: Solution) -> tuple[Solution, Solution]:
-        rng = np.random.default_rng()
-        punto_corte = rng.integers(1, parent1.gnome.shape[0])
+        punto_corte = self.rng.integers(1, parent1.gnome.shape[0])
 
         child_gnome_1 = np.concatenate([
             parent1.gnome[:punto_corte],

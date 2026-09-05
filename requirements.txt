@@ -5,3 +5,5 @@ numpy
 scikit-learn
 matplotlib
 pyarrow
+cartopy
+scikit-image

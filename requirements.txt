@@ -7,3 +7,4 @@ matplotlib
 pyarrow
 cartopy
 scikit-image
+imbalanced-learn

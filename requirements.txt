@@ -8,3 +8,4 @@ pyarrow
 cartopy
 scikit-image
 imbalanced-learn
+git+https://github.com/eugenioLR/sklearn-extensions.git

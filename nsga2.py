@@ -1,7 +1,7 @@
 import numpy as np
 import xarray as xr
 import pandas as pd 
-from sklearn.linear_model import LogisticRegression
+from sklearn_extensions.models.elm import ELMClassifier
 from sklearn.metrics import f1_score
 from sklearn.preprocessing import StandardScaler
 from solution import Solution
@@ -104,10 +104,10 @@ class Nsga2:
         X_train = scaler.fit_transform(X_train)
         X_val = scaler.transform(X_val)    
 
-        modelo_hw = LogisticRegression(max_iter=5000, random_state=random_state)
+        modelo_hw = ELMClassifier(hidden_layer_size=60, random_state=random_state)
         modelo_hw.fit(X_train, y_hw_train)
         
-        modelo_dr = LogisticRegression(max_iter=5000, random_state=random_state)
+        modelo_dr = ELMClassifier(hidden_layer_size=60, random_state=random_state)
         modelo_dr.fit(X_train, y_dr_train)
 
         y_hw_pred = modelo_hw.predict(X_val)
